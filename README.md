@@ -118,3 +118,38 @@ HTTP status validation is still pending; these tests do not imply that non-2xx r
 ## License
 
 ISC, as declared in `package.json`.
+
+## Bus arrivals and departures
+
+```ts
+const from = new Date();
+const to = new Date(from.getTime() + 30 * 60_000);
+const arrivals = await marta.getBusArrivals({ stopId: '902345', from, to });
+const departures = await marta.getBusDepartures({ stopId: '902345', from, to });
+for (const event of arrivals) {
+  console.log(event.tripId, event.routeId, event.time, event.updatedAt);
+}
+```
+
+Both methods require `stopId` and accept optional `routeId`, `tripId`, `vehicleId`,
+and `directionId` (0 or 1). All supplied filters must match. `from` defaults to now;
+`to` defaults to 30 minutes after `from`. Bounds are absolute JavaScript `Date`
+values. The window includes `from` and excludes `to`.
+
+Results are `BusStopEvent[]`, sorted by `time`, with one event per stop visit.
+Loop visits remain separate through `stopSequence`. Results include trip/vehicle
+identifiers, event type, service date/start time when supplied, optional delay and
+uncertainty in seconds, and optional `updatedAt` (trip) and `feedTimestamp` dates.
+Arrivals use only arrival timestamps; departures use only departure timestamps.
+Assigned stop IDs are honored. Missing fields remain undefined, including direction
+and delay, rather than taking protobuf defaults.
+
+These methods query the current realtime snapshot, not a historical archive or a
+complete schedule. Only explicitly supplied absolute event timestamps are returned.
+Delay-only updates require static GTFS and are omitted, as are skipped/no-data stops
+and canceled/deleted trips. No freshness cutoff is imposed; consumers can inspect
+`updatedAt` and `feedTimestamp`.
+
+Each call fetches the trip-update feed with a fresh five-second timeout and rejects
+non-success HTTP responses. See the
+[GTFS Realtime reference](https://gtfs.org/documentation/realtime/reference/).
