@@ -81,7 +81,7 @@ class Marta {
         const busPositions = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
         const entity = busPositions.entity
         const buses = entity.map(e => this.toBus(e.vehicle));
-        return buses[0]
+        return buses
 
     }
 }
