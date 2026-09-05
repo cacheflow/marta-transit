@@ -1,9 +1,9 @@
 # marta-js
-[MARTA logo](./MARTA.png)
+![MARTA logo](./MARTA.png)
 
 A TypeScript client for MARTA real-time train arrivals and bus vehicle positions, inspired by `marta-python`.
 
-The initial implementation lives in `app.ts`. The client is still taking shape: classes are not exported yet, and package build and publishing setup are pending.
+The initial implementation lives in `app.ts`. The client is still taking shape: classes are exported from the source file, while package build and publishing setup are pending.
 
 ## Implemented
 
@@ -15,7 +15,7 @@ The initial implementation lives in `app.ts`. The client is still taking shape: 
 
 ## Local setup
 
-Install dependencies from the repository root:
+Use Node.js 24 or newer. Install dependencies from the repository root:
 
 ```sh
 npm install
@@ -29,13 +29,15 @@ MARTA_API_KEY=your_api_key_here
 
 You can also supply `MARTA_API_KEY` through your shell environment. Keep your API key out of version control.
 
-The implementation uses Node.js globals `fetch` and `AbortSignal.timeout`. A TypeScript runner or build configuration is not included yet.
+The implementation uses Node.js globals `fetch` and `AbortSignal.timeout`. Node.js runs the TypeScript source directly using its built-in type stripping. A build configuration is not included yet.
 
 ## Usage
 
-For now, place this example **at the bottom of `app.ts`**, after the class definitions. There is no package import available yet.
+Save this example as `example.mjs` in the repository root. Import directly from the source file until package publishing is configured.
 
 ```ts
+import { Marta } from "./app.ts";
+
 async function main() {
   const marta = new Marta();
 
@@ -51,7 +53,7 @@ async function main() {
 main().catch(console.error);
 ```
 
-Run `app.ts` with a TypeScript runner of your choice. The file currently only defines classes; it does not make requests until you add a call such as the example above.
+Run the example with `node example.mjs`. Importing `app.ts` does not make requests on its own.
 
 ## Current API
 
@@ -89,7 +91,8 @@ Values are copied directly from the decoded feed without normalization. Missing 
 
 Next steps toward a reusable library:
 
-- [ ] Export the client and models; configure the package entry point and TypeScript build.
+- [x] Export the client and bus model from the source file.
+- [ ] Configure the package entry point and TypeScript build.
 - [ ] Replace `any` with accurate feed and response types, including optional fields.
 - [ ] Validate configuration, HTTP responses, and feed entities.
 - [ ] Enforce response size limits; `MAX_RESPONSE_BYTES` is currently declared but unused.
@@ -97,11 +100,20 @@ Next steps toward a reusable library:
 - [ ] Add bus and train filtering.
 - [ ] Define a consistent train model and timestamp handling.
 - [ ] Add configurable request timeouts and caching.
-- [ ] Add automated tests and package usage examples.
+- [x] Add automated tests for train responses, bus decoding, request configuration, and failures.
+- [ ] Add package usage examples after packaging is configured.
 
 ## Testing
 
-There are no automated tests yet. `npm test` currently runs the default placeholder script and exits with an error.
+Run the test suite with Node.js 24+:
+
+```sh
+npm test
+```
+
+Tests use Node's built-in test runner and mock all HTTP requests; no API key or network access is needed. Bus fixtures are encoded as real GTFS-Realtime protobuf messages before being decoded by the client. Coverage includes multiple vehicles, empty feeds, missing vehicle data, malformed responses, and propagated network/timeout errors. Tests verify the configured timeout without waiting five seconds.
+
+HTTP status validation is still pending; these tests do not imply that non-2xx responses are rejected. The test command executes TypeScript without type-checking it.
 
 ## License
 
