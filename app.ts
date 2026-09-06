@@ -1,23 +1,23 @@
-import "dotenv/config";
 import BusService from "./entities/BusService.ts";
 import TrainService from "./entities/TrainService.ts";
-export type { BusStopEvent, BusStopEventFilters } from "./entities/bus-stop-event.ts";
 
-export class Marta {
-    apiKey: string | undefined;
-    readonly buses: BusService;
-    readonly trains: TrainService;
+export { BusService, TrainService };
+export type { TrainArrival } from "./entities/TrainService.ts";
+export type { BusFeed } from "./entities/BusService.ts";
 
-    constructor({apiKey}: {
-        apiKey?: string
-    }) {
-        this.apiKey = apiKey;
-        this.buses = new BusService({apiKey: this.apiKey});
-        this.trains = new TrainService({apiKey: this.apiKey});
-    }
+export interface MartaOptions {
+  /** Required only for rail queries; defaults to MARTA_API_KEY. */
+  apiKey?: string;
 }
 
-const marta = new Marta({apiKey: process.env.MARTA_API_KEY});
+export class Marta {
+  readonly apiKey: string | undefined;
+  readonly buses: BusService;
+  readonly trains: TrainService;
 
-// marta.buses.getBusTrips({}).then(console.log).catch(console.error);
-marta.buses.getBusVehiclePositions({}).then(console.log).catch(console.error);
+  constructor({ apiKey = process.env.MARTA_API_KEY }: MartaOptions = {}) {
+    this.apiKey = apiKey;
+    this.buses = new BusService();
+    this.trains = new TrainService({ apiKey });
+  }
+}

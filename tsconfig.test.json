@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["app.ts", "entities/BusService.ts", "entities/TrainService.ts", "test/*.test.ts"]
+}
