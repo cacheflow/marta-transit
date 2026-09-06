@@ -132,7 +132,7 @@ test("trip snapshots preserve canceled trips and original stop events", async ()
       },
     },
   ]);
-  const feed = await new BusService().getTrips  ();
+  const feed = await new BusService().getTrips();
   assert.equal(feed.entity.length, 2);
   assert.equal(feed.entity[0].tripUpdate?.trip.scheduleRelationship, 3);
   assert.equal(
@@ -144,18 +144,28 @@ test("trip snapshots preserve canceled trips and original stop events", async ()
     /tripupdate\/tripupdates.pb$/,
   );
 });
-for (const method of ["getTrips ", "getPositions"] as const) {
-  test(`${method} returns an empty feed without inventing entities`, async () => {
+  test(`getPositions returns an empty feed without inventing entities`, async () => {
     respondWithFeed([]);
-    assert.deepEqual((await new BusService()[method]()).entity, []);
+    assert.deepEqual((await new BusService().getPositions()).entity, []);
   });
-  test(`${method} rejects malformed protobuf`, async () => {
+  test(`getTrips returns an empty feed without inventing entities`, async () => {
+    respondWithFeed([]);
+    assert.deepEqual((await new BusService().getTrips()).entity, []);
+  });
+
+  test(`getTrips rejects malformed protobuf`, async () => {
     fetchMock.mock.mockImplementation(
       async () => new Response(new Uint8Array([0x0a, 0x05, 0x01])),
     );
-    await assert.rejects(new BusService()[method]());
+    await assert.rejects(new BusService().getTrips());
   });
-}
+
+  test(`getPositions rejects malformed protobuf`, async () => {
+    fetchMock.mock.mockImplementation(
+      async () => new Response(new Uint8Array([0x0a, 0x05, 0x01])),
+    );
+    await assert.rejects(new BusService().getPositions());
+  });
 
 test("train arrivals retain original strings and extra fields and use documented authentication", async () => {
   fetchMock.mock.mockImplementation(async () => Response.json([train]));
@@ -203,7 +213,7 @@ test("malformed rail JSON is rejected", async () => {
 for (const [name, query, duration] of [
   ["trains", (m: Marta) => m.trains.getArrivals(), 5000],
   ["positions", (m: Marta) => m.buses.getPositions(), 20000],
-  ["trips", (m: Marta) => m.buses.getTrips  (), 20000],
+  ["trips", (m: Marta) => m.buses.getTrips(), 20000],
 ] as const) {
   test(`${name} creates a new timeout per request`, async () => {
     const timeout = mock.method(
