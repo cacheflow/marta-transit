@@ -1,105 +1,45 @@
-import "dotenv/config";
-import { selectBusStopEvents } from "./bus-stop-event.ts";
 import GtfsRealtimeBindings from "gtfs-realtime-bindings";
-import type { BusStopEvent, BusStopEventFilters, BusEventTypes } from "./bus-stop-event.ts";
-export type { BusStopEvent, BusStopEventFilters } from "./bus-stop-event.ts";
 
-const BUS_VEHICLE_POSITIONS_URL = (
-    'https://gtfs-rt.itsmarta.com/TMGTFSRealTimeWebService/vehicle/vehiclepositions.pb'
-)
-const BUS_TRIP_UPDATES_URL = (
-    'https://gtfs-rt.itsmarta.com/TMGTFSRealTimeWebService/tripupdate/tripupdates.pb'
-)
+/** A decoded GTFS Realtime snapshot, with protobuf fields preserved. */
+export type BusFeed = GtfsRealtimeBindings.transit_realtime.FeedMessage;
 
-class BusService {
-    trip: any;
-    position: any;
+const BUS_VEHICLE_POSITIONS_URL =
+  "https://gtfs-rt.itsmarta.com/TMGTFSRealTimeWebService/vehicle/vehiclepositions.pb";
+const BUS_TRIP_UPDATES_URL =
+  "https://gtfs-rt.itsmarta.com/TMGTFSRealTimeWebService/tripupdate/tripupdates.pb";
 
-    tripId: string;
-    startDate: string;
-    routeId: string;
-    directionId: string;
+export default class BusService {
+  /** Returns the complete trip-update snapshot, including cancellations. */
+  async getTrips(): Promise<BusFeed> {
+    return this.getGtfsData(BUS_TRIP_UPDATES_URL);
+  }
 
-    latitude: number;
-    longitude: number;
-    bearing: number;
-    timestamp: number;
-    rawData: any;
+  /** Returns the complete vehicle-position snapshot. No API key is needed. */
+  async getPositions(): Promise<BusFeed> {
+    return this.getGtfsData(BUS_VEHICLE_POSITIONS_URL);
+  }
 
-    apiKey: string | undefined;
-
-    constructor({apiKey}: {
-        apiKey?: string
-    }) {
-        this.apiKey = apiKey;
-    }
-
-
-    async getCanceled(filters: BusStopEventFilters): Promise<BusStopEvent[]> {
-        return this.getBusStopEvents("canceled", filters);
-    }
-
-    async getScheduled(filters: BusStopEventFilters): Promise<BusStopEvent[]> {
-        return this.getBusStopEvents("scheduled", filters);
-    }
-
-    async getArrivals(filters: BusStopEventFilters): Promise<BusStopEvent[]> {
-        return this.getBusStopEvents("scheduled", filters);
-    }
-
-    async getDepartues(filters: BusStopEventFilters): Promise<BusStopEvent[]> {
-        return this.getBusStopEvents("scheduled", filters);
-    }
-
+  private async getGtfsData(url: string): Promise<BusFeed> {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        Accept:
+          "application/protobuf, application/protocol-buffer, application/octet-stream",
+      },
+    });
     
-    async getGtfsData(url: string) {
-         const res = await fetch(url, {
-            signal: AbortSignal.timeout(5000),
-            headers: {
-                'Authorization': `Bearer ${this.apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!res.ok) throw new Error(`MARTA GTFS request failed: ${res.status} ${res.statusText}`);
-        const buffer = await res.arrayBuffer();
-        const gtfsRealtimeData = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
-        return gtfsRealtimeData
+    if (!response.ok) {
+      throw new Error(`MARTA bus request failed (HTTP ${response.status})`);
     }
 
-     private async getBusStopEvents(
-            eventType: BusEventTypes,
-            filters: BusStopEventFilters,
-        ): Promise<BusStopEvent[]> {
-        if (!filters || typeof filters.stopId !== "string" || !filters.stopId.trim()) {
-            throw new TypeError("stopId must be a non-empty string");
-        }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
+    const error = GtfsRealtimeBindings.transit_realtime.FeedMessage.verify(feed);
 
-        const from = filters.from ?? new Date();
-
-        if (!(from instanceof Date) || !Number.isFinite(from.getTime())) {
-            throw new RangeError("from must be a valid Date");
-        }  
-
-        const thirtyMinutes = 30 * 60_000;
-        // Default to 30 minutes after 'from' if 'to' is not provided
-        const to = filters.to ?? new Date(from.getTime() + thirtyMinutes);
-
-        if (!(to instanceof Date) || !Number.isFinite(to.getTime())) {
-            throw new RangeError("to must be a valid Date");
-        }
-
-        if (from.getTime() >= to.getTime()) {
-            throw new RangeError("from must be earlier than to");
-        }
-
-        const feed = await this.getGtfsData(BUS_TRIP_UPDATES_URL);
-        let newFilters = {}
-        Object.keys(filters).filter(key => key !== 'stopId').forEach(key => newFilters[key] = filters[key]);   
-        const selectedBusEvents = selectBusStopEvents(feed, eventType, { ...newFilters, from, to });
-        
-        return selectedBusEvents;
+    if (error) {
+      throw new TypeError(`Invalid MARTA bus feed: ${error}`);
     }
 
+    return feed;
+  }
 }
-
-export default BusService;

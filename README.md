@@ -1,155 +1,129 @@
-# marta-js
-![MARTA logo](./MARTA.png)
+# MARTA TypeScript client
 
-A TypeScript client for MARTA real-time train arrivals and bus vehicle positions, inspired by `marta-python`.
+A Node.js client for MARTA bus GTFS Realtime feeds and rail arrivals.
+Independent community project; not an official MARTA SDK.
 
-The initial implementation lives in `app.ts`. The client is still taking shape: classes are exported from the source file, while package build and publishing setup are pending.
+Requires **Node.js 24+**. Ships ESM JavaScript and TypeScript declarations.
 
-## Implemented
-
-- Read `MARTA_API_KEY` from the environment, with `.env` support through `dotenv`.
-- Fetch train arrival data with `getTrains()` and return the API's JSON response.
-- Fetch and decode the GTFS-Realtime bus vehicle positions feed with `getBuses()` using `gtfs-realtime-bindings`.
-- Map feed entities into an array of `Bus` objects, preserving the decoded vehicle data.
-- Apply a five-second timeout to both requests.
-
-## Local setup
-
-Use Node.js 24 or newer. Install dependencies from the repository root:
+## Install
 
 ```sh
-npm install
+npm install marta
 ```
-
-Create a `.env` file in the repository root:
-
-```dotenv
-MARTA_API_KEY=your_api_key_here
-```
-
-You can also supply `MARTA_API_KEY` through your shell environment. Keep your API key out of version control.
-
-The implementation uses Node.js globals `fetch` and `AbortSignal.timeout`. Node.js runs the TypeScript source directly using its built-in type stripping. A build configuration is not included yet.
 
 ## Usage
 
-Save this example as `example.mjs` in the repository root. Import directly from the source file until package publishing is configured.
-
 ```ts
-import { Marta } from "./app.ts";
+import { Marta } from 'marta';
 
-async function main() {
-  const marta = new Marta();
+const marta = new Marta();
 
-  const trains = await marta.getTrains();
-  console.log(trains);
-
-  const buses = await marta.getBuses();
-  for (const bus of buses) {
-    console.log(bus.routeId, bus.latitude, bus.longitude);
-  }
+// Bus feeds do not require an API key.
+const positions = await marta.buses.getBusVehiclePositions();
+for (const entity of positions.entity) {
+    if (!entity.vehicle) continue;
+    console.log(entity.vehicle.trip?.routeId, entity.vehicle.position);
 }
 
-main().catch(console.error);
+const trips = await marta.buses.getBusTrips();
+for (const entity of trips.entity) {
+    if (!entity.tripUpdate) continue;
+    console.log(entity.tripUpdate.trip.tripId, entity.tripUpdate.stopTimeUpdate);
+}
+
+// Rail queries require a key; this can also come from MARTA_API_KEY.
+const authenticated = new Marta({ apiKey: process.env.MARTA_API_KEY });
+const trains = await authenticated.trains.get();
+for (const train of trains) {
+    console.log(train.STATION, train.DESTINATION, train.WAITING_SECONDS);
+}
 ```
 
-Run the example with `node example.mjs`. Importing `app.ts` does not make requests on its own.
+Importing the library and constructing clients perform no requests. The library
+reads `MARTA_API_KEY` at construction but does not load `.env` files. Applications
+can use Node's `--env-file=.env` option themselves.
 
-## Current API
+Get a rail key through [MARTA's developer resources](https://itsmarta.com/app-developer-resources.aspx).
+Rail requests use the documented `apiKey` query parameter. Bus requests send no key.
 
-### `new Marta()`
+## API
 
-Reads `process.env.MARTA_API_KEY` when the client is constructed. Both request methods send it as a bearer token. Constructor options and API key validation are not implemented yet.
+| Method | Return | Timeout |
+| --- | --- | --- |
+| `marta.buses.getBusVehiclePositions()` | `Promise<BusFeed>` | 20 seconds |
+| `marta.buses.getBusTrips()` | `Promise<BusFeed>` | 20 seconds |
+| `marta.trains.getTrainArrivals()` | `Promise<TrainArrival[]>` | 5 seconds |
 
-### `await marta.getTrains()`
+`BusFeed` is the decoded `FeedMessage` from `gtfs-realtime-bindings`. The full
+snapshot is retained, including its header, trip relationships, and stop updates.
+No cancellations are filtered out. Protobuf 64-bit timestamps may be `Long`
+objects; use `Number(value)` when converting supported timestamps to Unix seconds.
+Optional protobuf fields can have inherited defaults; check field presence before
+interpreting a missing field as zero or an empty string.
 
-Returns the parsed JSON from MARTA's rail arrival endpoint unchanged. There is no `Train` model, response validation, or filtering yet.
+`TrainArrival` preserves MARTA's original uppercase field names and string values:
+`DESTINATION`, `DIRECTION`, `EVENT_TIME`, `LINE`, `NEXT_ARR`, `STATION`, `TRAIN_ID`,
+`WAITING_SECONDS`, and `WAITING_TIME`. Optional `IS_REALTIME`, `DELAY`, `LATITUDE`,
+and `LONGITUDE` fields are typed as strings when supplied. Additional fields are
+preserved as `unknown`. Empty arrays are valid. Invalid response shapes reject.
 
-### `await marta.getBuses()`
+Services and types are exported from the package root:
 
-Decodes MARTA's GTFS-Realtime vehicle positions feed and returns an array of `Bus` objects, one per feed entity. An empty feed returns an empty array.
+```ts
+import { BusService, TrainService } from 'marta';
+import type { BusFeed, TrainArrival, MartaOptions } from 'marta';
 
-Each `Bus` exposes:
+const buses = new BusService();
+const trains = new TrainService({ apiKey: process.env.MARTA_API_KEY });
 
-| Property | Source |
-| --- | --- |
-| `tripId` | `vehicle.trip.tripId` |
-| `startDate` | `vehicle.trip.startDate` |
-| `routeId` | `vehicle.trip.routeId` |
-| `directionId` | `vehicle.trip.directionId` |
-| `latitude` | `vehicle.position.latitude` |
-| `longitude` | `vehicle.position.longitude` |
-| `bearing` | `vehicle.position.bearing` |
-| `timestamp` | `vehicle.timestamp` |
-| `trip` | Decoded trip descriptor |
-| `position` | Decoded position |
-| `rawData` | Complete decoded vehicle object |
+const busStops = await buses.getTrips()
+const busPostions = await buses.getPositions()
+const trainArrivals = await trains.getArrivals();
+```
 
-Values are copied directly from the decoded feed without normalization. Missing fields can be `undefined`; entities without vehicle data are not currently skipped. Type declarations are still preliminary and do not fully describe the decoded values.
+Every call gets a fresh timeout. Non-2xx HTTP responses, malformed responses,
+network failures, and timeouts reject the promise. Missing rail credentials reject
+before a request is made. There are no automatic retries or caches.
 
-## Roadmap
+## Release scope
 
-Next steps toward a reusable library:
+Version 1.0.0 provides current feed snapshots. It does not provide historical data,
+static schedules, stop-time windows, route-name lookups, or normalized bus arrivals
+and departures. Filter feed entities in your application. Browser use and CommonJS
+are not supported by this release.
 
-- [x] Export the client and bus model from the source file.
-- [ ] Configure the package entry point and TypeScript build.
-- [ ] Replace `any` with accurate feed and response types, including optional fields.
-- [ ] Validate configuration, HTTP responses, and feed entities.
-- [ ] Enforce response size limits; `MAX_RESPONSE_BYTES` is currently declared but unused.
-- [ ] Add bus trip updates; the endpoint constant exists, but no method uses it yet.
-- [ ] Add bus and train filtering.
-- [ ] Define a consistent train model and timestamp handling.
-- [ ] Add configurable request timeouts and caching.
-- [x] Add automated tests for train responses, bus decoding, request configuration, and failures.
-- [ ] Add package usage examples after packaging is configured.
-
-## Testing
-
-Run the test suite with Node.js 24+:
+## Development
 
 ```sh
-npm test
+npm ci
+npm run check
 ```
 
-Tests use Node's built-in test runner and mock all HTTP requests; no API key or network access is needed. Bus fixtures are encoded as real GTFS-Realtime protobuf messages before being decoded by the client. Coverage includes multiple vehicles, empty feeds, missing vehicle data, malformed responses, and propagated network/timeout errors. Tests verify the configured timeout without waiting five seconds.
+`check` runs type validation, mocked transport tests, and the production build.
+Tests require no network or API key. Build output goes to `dist/`.
 
-HTTP status validation is still pending; these tests do not imply that non-2xx responses are rejected. The test command executes TypeScript without type-checking it.
+After building, run `node examples/basic.mjs` for live bus checks, or
+`node --env-file=.env examples/basic.mjs` to include rail arrivals.
+
+## Publishing
+
+**Release preparation:** the current name `marta` is already registered to another
+maintainer. Set a package name you own (and update these examples and the lockfile)
+before publishing. Then:
+
+```sh
+npm run check
+npm run test:package
+npm pack --dry-run
+npm pack
+# Install the tarball in a separate project and check its imports before publishing.
+npm publish --access public
+```
+
+`prepack` builds the package; `prepublishOnly` runs the complete check. Only build
+output, this README, and the ISC license are distributed. The package contains no
+example execution, credentials, tests, or prototype source files.
 
 ## License
 
-ISC, as declared in `package.json`.
-
-## Bus arrivals and departures
-
-```ts
-const from = new Date();
-const to = new Date(from.getTime() + 30 * 60_000);
-const arrivals = await marta.getBusArrivals({ stopId: '902345', from, to });
-const departures = await marta.getBusDepartures({ stopId: '902345', from, to });
-for (const event of arrivals) {
-  console.log(event.tripId, event.routeId, event.time, event.updatedAt);
-}
-```
-
-Both methods require `stopId` and accept optional `routeId`, `tripId`, `vehicleId`,
-and `directionId` (0 or 1). All supplied filters must match. `from` defaults to now;
-`to` defaults to 30 minutes after `from`. Bounds are absolute JavaScript `Date`
-values. The window includes `from` and excludes `to`.
-
-Results are `BusStopEvent[]`, sorted by `time`, with one event per stop visit.
-Loop visits remain separate through `stopSequence`. Results include trip/vehicle
-identifiers, event type, service date/start time when supplied, optional delay and
-uncertainty in seconds, and optional `updatedAt` (trip) and `feedTimestamp` dates.
-Arrivals use only arrival timestamps; departures use only departure timestamps.
-Assigned stop IDs are honored. Missing fields remain undefined, including direction
-and delay, rather than taking protobuf defaults.
-
-These methods query the current realtime snapshot, not a historical archive or a
-complete schedule. Only explicitly supplied absolute event timestamps are returned.
-Delay-only updates require static GTFS and are omitted, as are skipped/no-data stops
-and canceled/deleted trips. No freshness cutoff is imposed; consumers can inspect
-`updatedAt` and `feedTimestamp`.
-
-Each call fetches the trip-update feed with a fresh five-second timeout and rejects
-non-success HTTP responses. See the
-[GTFS Realtime reference](https://gtfs.org/documentation/realtime/reference/).
+ISC. See [LICENSE](./LICENSE).
