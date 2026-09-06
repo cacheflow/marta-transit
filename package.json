@@ -1,5 +1,5 @@
 {
-  "name": "marta",
+  "name": "martajs",
   "version": "0.1.0",
   "description": "TypeScript client for MARTA bus GTFS Realtime feeds and train arrivals.",
   "license": "ISC",
